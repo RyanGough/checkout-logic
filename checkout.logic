@@ -1,0 +1,51 @@
+// map an item code to a price
+price[item] = price -> string(item), int(price).
+
+// an entity to represent a basket of items
+basket(b), basket_id(b:id) -> int(id).
+
+// scan an item from a basket
+scan(b, item) -> basket(b), string(item).
+
+// get the cost of a given basket
+basket_cost[b] = cost -> basket(b), int(cost).
+basket_cost[b] = cost <- cost = _regular_basket_cost[b] + _specials_basket_cost[b].
+
+// store the specials
+specials[item,quantity] = price -> string(item), int(quantity), int(price).
+
+
+
+// does a given scan qualify for a discount
+_qualifying_scan(b,i) -> basket(b), string(i).
+lang:pulse(`_qualifying_scan).
++_qualifying_scan(b,i) <- +scan(b,i), _basket_item_quantity@prev[b,i] = q, specials[i, q + 1] = _.
+
+// number of items in basket that don't qualify for a special discount 
+_basket_item_quantity[b, i] = q -> basket(b), string(i), int(q).
++_basket_item_quantity[b, i] = 1 <- +scan(b, i), !+_qualifying_scan(b,i), !_basket_item_quantity@prev[b, i] = _.
+^_basket_item_quantity[b, i] = q + 1 <- +scan(b, i), !+_qualifying_scan(b,i), _basket_item_quantity@prev[b, i] = q.
+
+// when there is a qualifying scan, reset the regular item quantity to be 0
+^_basket_item_quantity[b, i] = 0 <- +_qualifying_scan(b, i).
+
+// keep a track of how many specials a basket qualifies for
+_basket_special_quantity[b, i] = q -> basket(b), string(i), int(q).
++_basket_special_quantity[b, i] = 1 <- +_qualifying_scan(b, i), !_basket_special_quantity@prev[b, i] = _.
+^_basket_special_quantity[b, i] = q + 1 <- +_qualifying_scan(b, i), _basket_special_quantity@prev[b, i] = q.
+
+// get the price for the regular scanned items in a given basket
+_regular_basket_cost[b] = cost -> basket(b), int(cost).
+_regular_basket_cost[b] = cost <-
+    agg<<cost = total(item_cost)>>
+        _basket_item_quantity[b, item] = quantity,
+        price[item] = price,
+        quantity * price = item_cost. 
+
+// get the price for the specials in a given basket
+_specials_basket_cost[b] = cost -> basket(b), int(cost).
+_specials_basket_cost[b] = cost <-
+    agg<<cost = total(special_cost)>>
+        _basket_special_quantity[b, item] = quantity,
+        specials[item,_] = price,
+        quantity * price = special_cost. 
